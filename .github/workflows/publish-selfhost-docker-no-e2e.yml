@@ -1,0 +1,157 @@
+name: Publish Self-host Docker Image (no e2e)
+run-name: "${{ format('publish self-host docker no-e2e {0}', inputs.tag) }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag to publish (e.g. v1.5.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-selfhost-docker-no-e2e-${{ inputs.tag }}
+  cancel-in-progress: true
+
+# Fast path for this fork: build linux/amd64, push by digest, then move the
+# user-visible tags. Skips the selfhost-docker e2e suite that gates the
+# canonical publish-selfhost-docker.yml workflow.
+env:
+  DO_NOT_TRACK: "1"
+  EXECUTOR_DISABLE_ANALYTICS: "1"
+  EXECUTOR_DISABLE_INTEGRATIONS_FETCH: "1"
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.validate.outputs.tag }}
+      image: ${{ steps.image.outputs.image }}
+      tags: ${{ steps.image.outputs.tags }}
+      labels: ${{ steps.image.outputs.labels }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Validate release tag
+        id: validate
+        env:
+          RAW_RELEASE_TAG: ${{ inputs.tag }}
+        run: bun run scripts/validate-release-ref.ts --tag-env RAW_RELEASE_TAG --write-env RELEASE_TAG --output tag
+
+      - name: Checkout release tag
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+        run: |
+          auth_remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --force --tags "$auth_remote" "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          git checkout --detach "$RELEASE_TAG"
+
+      - name: Resolve image metadata
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/executor-selfhost"
+          revision="$(git rev-parse HEAD)"
+
+          if [[ "$version" == *-* ]]; then
+            channel="beta"
+          else
+            channel="latest"
+          fi
+
+          {
+            echo "image=$image"
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "tags<<TAGS"
+            echo "${image}:${RELEASE_TAG}"
+            echo "${image}:${version}"
+            echo "${image}:${channel}"
+            echo "TAGS"
+            echo "labels<<LABELS"
+            echo "org.opencontainers.image.title=Executor self-host"
+            echo "org.opencontainers.image.description=Single-container self-hosted Executor"
+            echo "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}"
+            echo "org.opencontainers.image.revision=${revision}"
+            echo "org.opencontainers.image.version=${version}"
+            echo "LABELS"
+          } >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.metadata.outputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push self-host image by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/host-selfhost/Dockerfile
+          platforms: linux/amd64
+          labels: ${{ needs.metadata.outputs.labels }}
+          provenance: false
+          sbom: false
+          outputs: type=image,name=${{ needs.metadata.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Tag the published digest
+        shell: bash
+        env:
+          IMAGE: ${{ needs.metadata.outputs.image }}
+          TAGS: ${{ needs.metadata.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DIGEST}" ]; then
+            echo "Build did not return a digest."
+            exit 1
+          fi
+
+          tag_args=()
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            tag_args+=("-t" "$tag")
+          done <<< "${TAGS}"
+
+          docker buildx imagetools create "${tag_args[@]}" "${IMAGE}@${DIGEST}"
+          echo "Published ${IMAGE}@${DIGEST}"
