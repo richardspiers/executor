@@ -27,6 +27,7 @@ env:
 
 jobs:
   release:
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: ubuntu-latest
     permissions:
       actions: write

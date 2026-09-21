@@ -25,6 +25,7 @@ env:
 jobs:
   changes:
     name: Changed paths
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     outputs:
@@ -78,6 +79,7 @@ jobs:
 
   format:
     name: Format
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
@@ -101,6 +103,7 @@ jobs:
 
   lint:
     name: Lint
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
@@ -124,6 +127,7 @@ jobs:
 
   typecheck:
     name: Typecheck
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     env:
@@ -165,6 +169,7 @@ jobs:
 
   test:
     name: Test
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 15
     # Run eight independent packages at once and cap each Vitest process at two
@@ -253,6 +258,7 @@ jobs:
           # lane from the two-minute critical path.
           - { target: local, shard-index: 1, shard-name: 1of2 }
           - { target: local, shard-index: 2, shard-name: 2of2 }
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
@@ -328,7 +334,7 @@ jobs:
   cloud-closure:
     name: Cloud evaluated closure
     needs: changes
-    if: needs.changes.outputs.cloud_closure == 'true'
+    if: github.repository == 'UsefulSoftwareCo/executor' && needs.changes.outputs.cloud_closure == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     env:
@@ -372,7 +378,7 @@ jobs:
   desktop-smoke:
     name: Desktop smoke build
     needs: changes
-    if: needs.changes.outputs.desktop_smoke == 'true'
+    if: github.repository == 'UsefulSoftwareCo/executor' && needs.changes.outputs.desktop_smoke == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
@@ -455,7 +461,7 @@ jobs:
   selfhost-docker-smoke:
     name: Self-host Docker image
     needs: changes
-    if: needs.changes.outputs.selfhost_docker_smoke == 'true'
+    if: github.repository == 'UsefulSoftwareCo/executor' && needs.changes.outputs.selfhost_docker_smoke == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:

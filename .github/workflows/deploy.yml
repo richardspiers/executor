@@ -22,6 +22,7 @@ env:
 jobs:
   migrate:
     name: Migrate database
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production
     steps:
@@ -69,6 +70,7 @@ jobs:
 
   deploy-cloud:
     name: Deploy cloud
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production
     needs: migrate
@@ -126,6 +128,7 @@ jobs:
 
   deploy-marketing:
     name: Deploy marketing
+    if: github.repository == 'UsefulSoftwareCo/executor'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production
     steps:
