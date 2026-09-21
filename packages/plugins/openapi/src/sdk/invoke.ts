@@ -5,7 +5,7 @@ import {
   HttpClientRequest,
   HttpClientResponse,
 } from "effect/unstable/http";
-import { isToolFile, type ToolFileValue } from "@executor-js/sdk/core";
+import { isToolFile, normalizeBase64, type ToolFileValue } from "@executor-js/sdk/core";
 
 import { OpenApiInvocationError } from "./errors";
 import { isNdjsonMediaType, NDJSON_MEDIA_TYPES, resolveServerUrl } from "./openapi-utils";
@@ -400,14 +400,6 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
   return btoa(binary);
-};
-
-const normalizeBase64 = (value: string, encoding: "base64" | "base64url"): string => {
-  const compact = value.replace(/\s/g, "");
-  const alphabet =
-    encoding === "base64url" ? compact.replace(/-/g, "+").replace(/_/g, "/") : compact;
-  const remainder = alphabet.length % 4;
-  return remainder === 0 ? alphabet : `${alphabet}${"=".repeat(4 - remainder)}`;
 };
 
 const byteLengthFromBase64 = (base64: string): number => {

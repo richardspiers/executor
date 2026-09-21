@@ -477,6 +477,7 @@ export {
   type ToolError,
   type ToolHttpMeta,
 } from "./tool-result";
+export { normalizeBase64 } from "./base64";
 
 // Stamped boot-time data-migration ledger for the libSQL-backed apps.
 export {

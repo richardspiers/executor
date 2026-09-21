@@ -30,6 +30,7 @@ import {
   isToolFile,
   isToolResult,
   makeOrgWriteAccessState,
+  normalizeBase64,
   sanitizeArtifactPreviewMarkup,
   type OrgWriteAccess,
 } from "@executor-js/sdk";
@@ -601,7 +602,9 @@ const toolFileKind = (file: ToolFileValue): "image" | "audio" | "text" | "resour
 };
 
 const bytesFromBase64 = (base64: string): Uint8Array => {
-  const binary = atob(base64);
+  // ToolFile.encoding is always "base64", but agents wrap Gmail-style
+  // unpadded base64url JSON byte fields as ToolFiles without converting.
+  const binary = atob(normalizeBase64(base64, "base64url"));
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);

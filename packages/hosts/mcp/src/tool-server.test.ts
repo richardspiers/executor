@@ -598,6 +598,46 @@ describe("MCP host server — native elicitation mode", () => {
     });
   });
 
+  it("execute tool decodes unpadded Gmail-style base64url text files", async () => {
+    const plaintext = "Hi?\n>>\n";
+    const gmailBase64Url = "SGk_Cj4-Cg";
+    const engine = makeStubEngine({
+      execute: () =>
+        Effect.succeed({
+          result: null,
+          output: [
+            {
+              type: "file",
+              file: toolFile({
+                name: "body.txt",
+                mimeType: "text/plain",
+                data: gmailBase64Url,
+                byteLength: plaintext.length,
+              }),
+            },
+          ],
+        }),
+    });
+
+    await withNativeClient(engine, ELICITATION_CAPS, async (client) => {
+      const result = await client.callTool({
+        name: "execute",
+        arguments: { code: "emit(message.payload.body.data);" },
+      });
+
+      const content = result.content as Array<Record<string, unknown>>;
+      expect(content[0]).toMatchObject({
+        type: "text",
+        text: "File output: body.txt (text/plain, 7 bytes)",
+      });
+      expect(content[1]).toMatchObject({
+        type: "text",
+        text: plaintext,
+      });
+      expect(result.isError).toBeFalsy();
+    });
+  });
+
   it("execute tool renders text-like emitted file output as MCP text", async () => {
     const engine = makeStubEngine({
       execute: () =>
