@@ -14,6 +14,11 @@ import {
   type GoogleDiscoveryServicePolicy,
 } from "./service-policy";
 import { AuthTemplateSlug } from "@executor-js/sdk/shared";
+import {
+  GMAIL_BATCH_GET_MAX_IDS,
+  GMAIL_MESSAGES_BATCH_GET_TOOL,
+  GMAIL_READONLY_SCOPE,
+} from "./gmail-batch-get";
 
 interface SpecFetchCredentials {
   readonly headers?: Record<string, string>;
@@ -899,6 +904,7 @@ const GOOGLE_PHOTOS_LIBRARY_SERVICE = "photoslibrary";
 const GOOGLE_PHOTOS_APPENDONLY_SCOPE = "https://www.googleapis.com/auth/photoslibrary.appendonly";
 const GOOGLE_PHOTOS_UPLOAD_TOOL_PATH = "photoslibrary.mediaItems.upload";
 const GOOGLE_PHOTOS_UPLOAD_PATH = "/v1/uploads";
+const GMAIL_BATCH_GET_PATH = "/gmail/v1/users/{userId}/messages/batchGet";
 
 const discoveryScopesForService = (
   service: string,
@@ -962,6 +968,65 @@ const googleOauthTemplate = (scopes: Record<string, string>): readonly Authentic
       scopes: Object.keys(scopes),
     },
   ];
+
+const gmailMessagesBatchGetOperation = (input: {
+  readonly serverUrl: string;
+  readonly tags?: readonly string[];
+}): OpenApiOperationObject => ({
+  operationId: GMAIL_MESSAGES_BATCH_GET_TOOL,
+  "x-executor-toolPath": GMAIL_MESSAGES_BATCH_GET_TOOL,
+  "x-executor-pathTemplate": GMAIL_BATCH_GET_PATH,
+  ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
+  description:
+    `Reads up to ${GMAIL_BATCH_GET_MAX_IDS} full message bodies in one approval. ` +
+    "Only the ids in this call are fetched, in the order given.",
+  servers: [{ url: input.serverUrl }],
+  parameters: [
+    {
+      name: "userId",
+      in: "path",
+      required: true,
+      description: 'Must be "me", the authenticated mailbox.',
+      schema: { type: "string", enum: ["me"] },
+    },
+    {
+      name: "format",
+      in: "query",
+      required: true,
+      description: 'Must be "full". Headers are read on the metadata scope, without this tool.',
+      schema: { type: "string", enum: ["full"] },
+    },
+    {
+      name: "ids",
+      in: "query",
+      required: true,
+      description:
+        `One to ${GMAIL_BATCH_GET_MAX_IDS} Gmail message ids, with no duplicates. ` +
+        "Each id is fetched once.",
+      schema: {
+        type: "array",
+        items: { type: "string" },
+      },
+      style: "form",
+      explode: true,
+    },
+  ],
+  responses: {
+    "200": {
+      description: "Successful response",
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            description: "One result per requested id, in request order.",
+          },
+        },
+      },
+    },
+  },
+  security: [{ googleOAuth2: [GMAIL_READONLY_SCOPE] }],
+  "x-google-scopes": [GMAIL_READONLY_SCOPE],
+});
 
 const googlePhotosUploadOperation = (input: {
   readonly toolPath: string;
@@ -1324,6 +1389,30 @@ export const convertGoogleDiscoveryBundleToOpenApi = Effect.fn(
       paths[GOOGLE_PHOTOS_UPLOAD_PATH]!.post = googlePhotosUploadOperation({
         toolPath: GOOGLE_PHOTOS_UPLOAD_TOOL_PATH,
         oauthScopes: [GOOGLE_PHOTOS_APPENDONLY_SCOPE],
+        serverUrl: info.baseUrl,
+        tags: [info.title],
+      });
+    }
+
+    // Discovery has no messages.batchGet. Emit one only when this integration's
+    // consent can read bodies, so the metadata and modify catalogues stay as
+    // they are. An unfiltered bundle is left alone: the live integrations pass
+    // an explicit consent scope.
+    if (
+      info.service === "gmail" &&
+      info.version === "v1" &&
+      consentScopeSet !== null &&
+      [...consentScopeSet].some((scope) => googleScopeCovers(scope, GMAIL_READONLY_SCOPE)) &&
+      !hasOperation(paths, GMAIL_MESSAGES_BATCH_GET_TOOL)
+    ) {
+      const pathKey = uniquePathKey(
+        paths,
+        GMAIL_BATCH_GET_PATH,
+        "post",
+        GMAIL_MESSAGES_BATCH_GET_TOOL,
+      );
+      paths[pathKey] ??= {};
+      paths[pathKey]!.post = gmailMessagesBatchGetOperation({
         serverUrl: info.baseUrl,
         tags: [info.title],
       });

@@ -53,6 +53,11 @@ import { parse, type ParsedDocument } from "./parse";
 import { parseEntry, structuralSplit, type KeepPathItem, type SpecStructure } from "./split";
 import { type OpenapiStore, type StoredOperation } from "./store";
 import { OperationBinding } from "./types";
+import {
+  GMAIL_MESSAGES_BATCH_GET_TOOL,
+  invokeGmailMessagesBatchGet,
+  parseGmailBatchGetArgs,
+} from "../providers/google/gmail-batch-get";
 import { getHealthCheckParameters } from "./health-check-operation";
 
 const STRINGIFIED_BODY_CAP = 1024;
@@ -715,6 +720,13 @@ export const invokeOpenApiBackedTool = (input: {
       Object.assign(queryParams, rendered.queryParams);
     }
 
+    if (input.toolRow.name === GMAIL_MESSAGES_BATCH_GET_TOOL) {
+      return yield* invokeGmailMessagesBatchGet({
+        args: input.args,
+        authorization: headers.authorization ?? headers.Authorization,
+      }).pipe(Effect.provide(input.httpClientLayer));
+    }
+
     const invocation = yield* invokeWithLayer(
       binding,
       (input.args ?? {}) as Record<string, unknown>,
@@ -847,6 +859,16 @@ export const validateOpenApiBackedToolArgs = (input: {
   readonly args: unknown;
 }) =>
   Effect.gen(function* () {
+    if (input.toolRow.name === GMAIL_MESSAGES_BATCH_GET_TOOL) {
+      const parsed = parseGmailBatchGetArgs(input.args);
+      if (!parsed.ok) {
+        return yield* new OpenApiInvocationError({
+          message: parsed.message,
+          statusCode: Option.none(),
+        });
+      }
+      return;
+    }
     const operation = yield* input.ctx.storage.getOperation(
       input.toolRow.integration,
       input.toolRow.name,

@@ -1076,10 +1076,75 @@ it.effect("filters Gmail operations to the explicitly selected consent scope", (
     );
     expect(operationIds).toContain("gmail.users.messages.list");
     expect(operationIds).not.toContain("gmail.users.messages.delete");
+    expect(operationIds).not.toContain("gmail.users.messages.batchGet");
     const oauthTemplate = result.authenticationTemplate?.find((entry) => entry.kind === "oauth2");
     expect(oauthTemplate?.kind === "oauth2" ? oauthTemplate.scopes : undefined).toEqual([
       modifyScope,
     ]);
+  }),
+);
+
+it.effect("adds messages.batchGet only when the consent can read message bodies", () =>
+  Effect.gen(function* () {
+    const readonlyScope = "https://www.googleapis.com/auth/gmail.readonly";
+    const metadataScope = "https://www.googleapis.com/auth/gmail.metadata";
+    // @effect-diagnostics-next-line preferSchemaOverJson:off
+    const documentText = JSON.stringify({
+      name: "gmail",
+      version: "v1",
+      title: "Gmail API",
+      rootUrl: "https://gmail.googleapis.com/",
+      servicePath: "",
+      auth: {
+        oauth2: {
+          scopes: {
+            [readonlyScope]: { description: "Read Gmail" },
+            [metadataScope]: { description: "Read Gmail metadata" },
+          },
+        },
+      },
+      resources: {
+        users: {
+          resources: {
+            messages: {
+              methods: {
+                get: {
+                  id: "gmail.users.messages.get",
+                  httpMethod: "GET",
+                  path: "gmail/v1/users/{userId}/messages/{id}",
+                  scopes: [readonlyScope, metadataScope],
+                  parameters: {
+                    userId: { location: "path", required: true, type: "string" },
+                    id: { location: "path", required: true, type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      schemas: {},
+    });
+    const discoveryUrl = "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest";
+    const operationIdsFor = (consentScopes: readonly string[]) =>
+      Effect.gen(function* () {
+        const result = yield* convertGoogleDiscoveryBundleToOpenApi({
+          consentScopes,
+          documents: [{ discoveryUrl, documentText }],
+        });
+        const spec = decodeConvertedSpec(result.specText);
+        return Object.values(spec.paths).flatMap((path) =>
+          Object.values(path).map((operation) => operation.operationId),
+        );
+      });
+
+    const readonlyIds = yield* operationIdsFor([readonlyScope]);
+    expect(readonlyIds).toContain("gmail.users.messages.get");
+    expect(readonlyIds).toContain("gmail.users.messages.batchGet");
+
+    const metadataIds = yield* operationIdsFor([metadataScope]);
+    expect(metadataIds).toContain("gmail.users.messages.get");
+    expect(metadataIds).not.toContain("gmail.users.messages.batchGet");
   }),
 );
 
